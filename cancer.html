@@ -1,0 +1,1887 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gene Expression Explorer — PCA & FLDA</title>
+
+<!-- External libraries -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/plotly.js/2.27.0/plotly.min.js"></script>
+<script src="analysis.js"></script>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+
+<style>
+:root {
+  --bg:        #0b0d11;
+  --bg1:       #12151c;
+  --bg2:       #181c26;
+  --bg3:       #1e2330;
+  --border:    #2a3040;
+  --border2:   #3a4458;
+  --text:      #c8d0e0;
+  --text2:     #7a8aaa;
+  --text3:     #4a5570;
+  --accent:    #4e9ff5;
+  --accent2:   #7bc8f6;
+  --green:     #3dd68c;
+  --orange:    #f5a623;
+  --red:       #f55050;
+  --purple:    #a87cf5;
+  --teal:      #4ec9b0;
+  --mono:      'IBM Plex Mono', monospace;
+  --sans:      'IBM Plex Sans', sans-serif;
+  --panel-r:   6px;
+  --gutter:    14px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: var(--sans);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.5;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: var(--bg1); }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+/* ── Header ── */
+#header {
+  background: var(--bg1);
+  border-bottom: 1px solid var(--border);
+  padding: 0 24px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  color: var(--text);
+}
+
+.logo-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 6px var(--accent);
+}
+
+.logo span { color: var(--accent); }
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.status-pill {
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  color: var(--text2);
+  background: var(--bg2);
+}
+
+.status-pill.ready { color: var(--green); border-color: var(--green); }
+.status-pill.loading { color: var(--orange); border-color: var(--orange); animation: pulse 1.2s ease infinite; }
+.status-pill.error { color: var(--red); border-color: var(--red); }
+
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.5} }
+
+/* ── Upload zone ── */
+#upload-zone {
+  margin: 32px auto;
+  max-width: 620px;
+  text-align: center;
+  padding: 0 18px;
+}
+
+#upload-zone h2 {
+  font-size: 15px;
+  font-weight: 500;
+  margin-bottom: 6px;
+  color: var(--text);
+}
+
+#upload-zone > p {
+  color: var(--text2);
+  font-size: 12px;
+  margin-bottom: 0;
+}
+
+.drop-target {
+  border: 1.5px dashed var(--border2);
+  border-radius: 8px;
+  padding: 22px 14px;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+  background: var(--bg1);
+  text-align: center;
+  user-select: none;
+}
+
+.drop-target:hover, .drop-target.drag-over {
+  border-color: var(--accent);
+  background: rgba(78,159,245,0.06);
+}
+
+.drop-target.loaded {
+  border-color: var(--green);
+  border-style: solid;
+}
+
+.drop-icon {
+  font-size: 22px;
+  margin-bottom: 6px;
+  color: var(--text3);
+  transition: color 0.2s;
+}
+
+.drop-target.loaded .drop-icon { color: var(--green); }
+.drop-target:hover .drop-icon  { color: var(--accent); }
+
+.drop-title {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.drop-sub {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text3);
+}
+
+.upload-info-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 18px auto 0;
+  max-width: 900px;
+  text-align: left;
+}
+
+.upload-info-card {
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: var(--panel-r);
+  padding: 12px;
+}
+
+.upload-info-title {
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text2);
+  margin-bottom: 8px;
+}
+
+.matrix-preview {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.matrix-preview-cell {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 10px;
+}
+
+.matrix-preview-value {
+  font-family: var(--mono);
+  font-size: 20px;
+  color: var(--text);
+  line-height: 1;
+}
+
+.matrix-preview-label {
+  font-family: var(--mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text3);
+  margin-top: 4px;
+}
+
+.code-list,
+.pca-guide-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.code-row,
+.pca-guide-row {
+  display: grid;
+  grid-template-columns: 48px 1fr;
+  gap: 9px;
+  align-items: start;
+  font-size: 11px;
+  color: var(--text2);
+  line-height: 1.45;
+}
+
+.code-row.active {
+  color: var(--text);
+}
+
+.code-row.active .code-token {
+  border-color: var(--green);
+  color: var(--green);
+}
+
+.code-token,
+.pca-guide-key {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--accent);
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 5px;
+  text-align: center;
+}
+
+.pca-guide-row {
+  grid-template-columns: 92px 1fr;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 16px;
+  border-radius: var(--panel-r);
+  border: 1px solid var(--border2);
+  background: var(--bg2);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn:hover { border-color: var(--accent); color: var(--accent); background: rgba(78,159,245,0.08); }
+.btn:active { transform: translateY(1px); }
+.btn.primary { background: var(--accent); color: var(--bg); border-color: var(--accent); font-weight: 500; }
+.btn.primary:hover { background: var(--accent2); border-color: var(--accent2); color: var(--bg); }
+
+.btn-row {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+/* ── Main layout ── */
+#app { display: none; }
+
+/* PCA section */
+#pca-section {
+  display: grid;
+  grid-template-columns: 1fr 300px;
+  gap: var(--gutter);
+  padding: var(--gutter) 18px;
+  min-height: 100vh;
+}
+
+#pca-graphs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gutter);
+}
+
+/* FLDA section */
+#flda-section {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: var(--gutter);
+  padding: var(--gutter) 18px var(--gutter);
+  border-top: 1px solid var(--border);
+}
+
+/* ── Panel ── */
+.panel {
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: var(--panel-r);
+  overflow: hidden;
+}
+
+.panel-header {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.panel-title {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text2);
+}
+
+.panel-badge {
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--text3);
+}
+
+.panel-body {
+  padding: 14px;
+}
+
+/* ── Controls ── */
+.ctrl-group {
+  margin-bottom: 18px;
+}
+
+.ctrl-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text3);
+  margin-bottom: 6px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.ctrl-value {
+  color: var(--accent);
+  font-size: 11px;
+}
+
+input[type=range] {
+  -webkit-appearance: none;
+  width: 100%;
+  height: 2px;
+  background: var(--border2);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 4px rgba(78,159,245,0.5);
+  cursor: pointer;
+}
+
+input[type=range]:focus::-webkit-slider-thumb {
+  box-shadow: 0 0 0 3px rgba(78,159,245,0.2);
+}
+
+select {
+  width: 100%;
+  padding: 6px 8px;
+  background: var(--bg2);
+  border: 1px solid var(--border2);
+  border-radius: 4px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+  cursor: pointer;
+  outline: none;
+}
+
+select:focus { border-color: var(--accent); }
+
+select option { background: var(--bg2); }
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.checkbox-row input[type=checkbox] {
+  accent-color: var(--accent);
+  width: 13px; height: 13px;
+  cursor: pointer;
+}
+
+.checkbox-row label {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+/* ── Gene table ── */
+#gene-table-wrap {
+  max-height: 200px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.gene-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--mono);
+  font-size: 10px;
+}
+
+.gene-table th {
+  background: var(--bg2);
+  padding: 5px 8px;
+  text-align: left;
+  color: var(--text3);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.gene-table td {
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+}
+
+.gene-table tr:last-child td { border-bottom: none; }
+.gene-table tr:hover td { background: var(--bg2); }
+
+.gene-bar {
+  display: inline-block;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--accent);
+  vertical-align: middle;
+  min-width: 2px;
+  transition: width 0.3s;
+}
+
+/* ── Stats strip ── */
+.stats-strip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1px;
+  background: var(--border);
+  border-top: 1px solid var(--border);
+}
+
+.stat-cell {
+  background: var(--bg1);
+  padding: 10px 14px;
+  text-align: center;
+}
+
+.stat-val {
+  font-family: var(--mono);
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--text);
+  line-height: 1;
+}
+
+.stat-lbl {
+  font-family: var(--mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text3);
+  margin-top: 3px;
+}
+
+/* ── Section divider ── */
+.section-label {
+  padding: 22px 18px 8px;
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text3);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.section-label::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+/* ── Accuracy badges ── */
+.acc-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.acc-badge {
+  flex: 1;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 8px 10px;
+  text-align: center;
+}
+
+.acc-badge .val {
+  font-family: var(--mono);
+  font-size: 20px;
+  font-weight: 500;
+  color: var(--green);
+}
+
+.acc-badge .lbl {
+  font-family: var(--mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text3);
+  margin-top: 2px;
+}
+
+/* ── Plot containers ── */
+.plot-wrap {
+  width: 100%;
+  background: transparent;
+}
+
+/* ── Legend ── */
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text2);
+  margin-bottom: 4px;
+}
+
+.legend-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* ── Separator ── */
+.sep {
+  height: 1px;
+  background: var(--border);
+  margin: 14px 0;
+}
+
+/* ── Error box ── */
+.error-box {
+  background: rgba(245,80,80,0.08);
+  border: 1px solid var(--red);
+  border-radius: 4px;
+  padding: 10px 12px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--red);
+  margin: 8px 0;
+}
+
+/* ── Tooltip-style info ── */
+.info-tip {
+  font-size: 10px;
+  color: var(--text3);
+  line-height: 1.6;
+  padding: 8px 10px;
+  background: var(--bg3);
+  border-radius: 4px;
+  border-left: 2px solid var(--border2);
+  margin-top: 8px;
+}
+
+.tag {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 10px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--text2);
+  margin: 2px;
+}
+
+/* ── Responsive ── */
+@media (max-width: 900px) {
+  #pca-section { grid-template-columns: 1fr; }
+  #flda-section { grid-template-columns: 1fr; }
+  .stats-strip { grid-template-columns: repeat(2,1fr); }
+  .upload-info-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════ HEADER ═══════════════════════ -->
+<div id="header">
+  <div class="logo">
+    <div class="logo-dot"></div>
+    Gene<span>Explore</span>
+  </div>
+  <div class="header-right">
+    <span id="status-pill" class="status-pill">No data</span>
+    <button class="btn" onclick="document.getElementById('file-input-expr').click()">↑ Expression CSV</button>
+    <button class="btn" onclick="document.getElementById('file-input-labels').click()" id="hdr-labels-btn">+ Labels CSV</button>
+    <button class="btn" onclick="loadDemo()">Demo data</button>
+  </div>
+</div>
+<input type="file" id="file-input-expr"   accept=".csv" style="display:none">
+<input type="file" id="file-input-labels" accept=".csv,.txt" style="display:none">
+
+<!-- ═══════════════════════ UPLOAD ZONE ═══════════════════════ -->
+<div id="upload-zone">
+  <h2>Load your data</h2>
+  <p>Upload gene expression and (optionally) a separate labels file.<br>Rows must match in order across both files.</p>
+
+  <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:18px; max-width:560px; margin-left:auto; margin-right:auto;">
+
+    <!-- Gene expression drop target -->
+    <div class="drop-target" id="drop-expr"
+      ondragover="event.preventDefault(); this.classList.add('drag-over')"
+      ondragleave="this.classList.remove('drag-over')"
+      ondrop="handleDropExpr(event)"
+      onclick="document.getElementById('file-input-expr').click()">
+      <div class="drop-icon" id="drop-expr-icon">⬡</div>
+      <div class="drop-title">Gene Expression</div>
+      <div class="drop-sub" id="drop-expr-sub">CSV · rows=samples · cols=genes</div>
+      <div class="drop-filename" id="drop-expr-name" style="display:none;margin-top:6px;font-family:var(--mono);font-size:10px;color:var(--green);"></div>
+    </div>
+
+    <!-- Labels drop target -->
+    <div class="drop-target" id="drop-labels"
+      ondragover="event.preventDefault(); this.classList.add('drag-over')"
+      ondragleave="this.classList.remove('drag-over')"
+      ondrop="handleDropLabels(event)"
+      onclick="document.getElementById('file-input-labels').click()">
+      <div class="drop-icon" id="drop-labels-icon">◈</div>
+      <div class="drop-title">Labels <span style="color:var(--text3);font-size:10px">(optional)</span></div>
+      <div class="drop-sub" id="drop-labels-sub">CSV · one column · same row order</div>
+      <div class="drop-filename" id="drop-labels-name" style="display:none;margin-top:6px;font-family:var(--mono);font-size:10px;color:var(--green);"></div>
+    </div>
+
+  </div>
+
+  <p style="margin-top:12px;font-family:var(--mono);font-size:10px;color:var(--text3);">
+    Without a labels file, clusters are discovered automatically via K-Means on PCA scores.
+  </p>
+
+  <div class="btn-row" style="margin-top:14px;">
+    <button class="btn primary" id="btn-run" onclick="triggerRun()" disabled>Run Analysis</button>
+    <button class="btn" onclick="loadDemo()">Load demo data</button>
+  </div>
+  <div id="upload-error" class="error-box" style="display:none;margin-top:10px;max-width:560px;margin-left:auto;margin-right:auto;"></div>
+
+  <div class="upload-info-grid">
+    <div class="upload-info-card">
+      <div class="upload-info-title">Matrix size</div>
+      <div class="matrix-preview">
+        <div class="matrix-preview-cell">
+          <div class="matrix-preview-value" id="preview-samples">–</div>
+          <div class="matrix-preview-label">Samples</div>
+        </div>
+        <div class="matrix-preview-cell">
+          <div class="matrix-preview-value" id="preview-genes">–</div>
+          <div class="matrix-preview-label">Genes</div>
+        </div>
+      </div>
+      <div class="info-tip">Rows are biological samples. Columns are genes/features. PCA compresses this matrix into fewer summary directions.</div>
+    </div>
+
+    <div class="upload-info-card">
+      <div class="upload-info-title">Classification codes</div>
+      <div class="code-list" id="classification-guide"></div>
+    </div>
+
+    <div class="upload-info-card">
+      <div class="upload-info-title">PCA controls</div>
+      <div class="pca-guide-list">
+        <div class="pca-guide-row">
+          <span class="pca-guide-key">Components</span>
+          <span>More PCs preserve more variation and make FLDA/K-Means use a richer projection; fewer PCs simplify the view and reduce noise.</span>
+        </div>
+        <div class="pca-guide-row">
+          <span class="pca-guide-key">Variance</span>
+          <span>The threshold marks how many PCs are needed to explain a chosen percent of total dataset variance.</span>
+        </div>
+        <div class="pca-guide-row">
+          <span class="pca-guide-key">K clusters</span>
+          <span>Changes how many groups K-Means searches for when labels are not uploaded. The elbow plot helps choose this value.</span>
+        </div>
+        <div class="pca-guide-row">
+          <span class="pca-guide-key">Top genes</span>
+          <span>Controls how many strongest-loading genes are shown for the selected PC, helping interpret what drives that component.</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════ APP (shown after data load) ═══════════════════════ -->
+<div id="app">
+
+  <!-- ─── Stats strip ─── -->
+  <div class="stats-strip" id="stats-strip">
+    <div class="stat-cell"><div class="stat-val" id="stat-samples">–</div><div class="stat-lbl">Samples</div></div>
+    <div class="stat-cell"><div class="stat-val" id="stat-genes">–</div><div class="stat-lbl">Genes</div></div>
+    <div class="stat-cell"><div class="stat-val" id="stat-classes">–</div><div class="stat-lbl">Classes</div></div>
+    <div class="stat-cell"><div class="stat-val" id="stat-var3">–</div><div class="stat-lbl">Var (PC1-3)</div></div>
+  </div>
+
+  <div class="section-label">Principal Component Analysis</div>
+
+  <!-- ─── PCA SECTION ─── -->
+  <div id="pca-section">
+
+    <!-- Left: graphs -->
+    <div id="pca-graphs">
+
+      <!-- 3D scatter -->
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">3D PCA — Cancerous vs Non-cancerous</span>
+          <span class="panel-badge" id="badge-3d">PC1 · PC2 · PC3</span>
+        </div>
+        <div id="plot-3d" class="plot-wrap" style="height:400px;"></div>
+      </div>
+
+      <!-- 2D scatter -->
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">2D PCA — PC1 vs PC2</span>
+          <span class="panel-badge" id="badge-2d">PC1 · PC2</span>
+        </div>
+        <div id="plot-2d" class="plot-wrap" style="height:320px;"></div>
+      </div>
+
+      <!-- Scree plot -->
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">Scree — Explained Variance</span>
+          <span class="panel-badge" id="badge-scree">Variance threshold</span>
+        </div>
+        <div id="plot-scree" class="plot-wrap" style="height:260px;"></div>
+      </div>
+
+      <!-- Elbow plot -->
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">Elbow plot — K-Means inertia</span>
+          <span class="panel-badge" id="badge-elbow">K selection</span>
+        </div>
+        <div id="plot-elbow" class="plot-wrap" style="height:220px;"></div>
+      </div>
+
+    </div>
+
+    <!-- Right: PCA controls -->
+    <div style="display:flex; flex-direction:column; gap:var(--gutter);">
+
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">PCA Controls</span>
+        </div>
+        <div class="panel-body">
+
+          <div class="ctrl-group">
+            <div class="ctrl-label">
+              Number of components
+              <span class="ctrl-value" id="ncomp-val">10</span>
+            </div>
+            <input type="range" id="ncomp" min="3" max="30" value="10"
+              oninput="document.getElementById('ncomp-val').textContent=this.value; debouncedRunPCA()">
+          </div>
+
+          <div class="ctrl-group">
+            <div class="ctrl-label">
+              Variance threshold
+              <span class="ctrl-value" id="var-thresh-val">80%</span>
+            </div>
+            <input type="range" id="var-thresh" min="50" max="99" value="80"
+              oninput="document.getElementById('var-thresh-val').textContent=this.value+'%'; updateScreeLine()">
+          </div>
+
+          <div class="ctrl-group">
+            <div class="ctrl-label">
+              K-Means clusters (K)
+              <span class="ctrl-value" id="kmeans-k-val">3</span>
+            </div>
+            <input type="range" id="kmeans-k" min="2" max="10" value="3"
+              oninput="document.getElementById('kmeans-k-val').textContent=this.value; debouncedRunKMeans()">
+            <div class="info-tip" style="margin-top:6px;">Clusters are discovered automatically from PC scores. Use the elbow on the scree plot to pick K.</div>
+          </div>
+
+          <div class="ctrl-group">
+            <div class="ctrl-label">
+              Top genes per PC
+              <span class="ctrl-value" id="topgenes-val">10</span>
+            </div>
+            <input type="range" id="topgenes" min="3" max="50" value="10"
+              oninput="document.getElementById('topgenes-val').textContent=this.value; renderGeneTable()">
+          </div>
+
+          <div class="ctrl-group">
+            <div class="ctrl-label">PC to inspect</div>
+            <select id="pc-select" onchange="renderGeneTable()">
+              <option value="0">PC1</option>
+              <option value="1">PC2</option>
+              <option value="2">PC3</option>
+            </select>
+          </div>
+
+          <div class="ctrl-group">
+            <div class="ctrl-label">Display</div>
+            <div class="checkbox-row">
+              <input type="checkbox" id="show-labels" onchange="renderPlots()">
+              <label for="show-labels">Show sample labels</label>
+            </div>
+            <div class="checkbox-row">
+              <input type="checkbox" id="show-ellipses" checked onchange="renderPlots()">
+              <label for="show-ellipses">Cluster ellipses (2D)</label>
+            </div>
+          </div>
+
+          <div class="sep"></div>
+
+          <button class="btn primary" style="width:100%" onclick="runPCA()">↺ Recompute PCA</button>
+          <div id="pca-error" class="error-box" style="display:none;"></div>
+        </div>
+      </div>
+
+      <!-- Top genes panel -->
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">Top genes</span>
+          <span class="panel-badge" id="gene-pc-label">PC1</span>
+        </div>
+        <div class="panel-body" style="padding:8px;">
+          <div id="gene-table-wrap">
+            <table class="gene-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Gene</th>
+                  <th>|Loading|</th>
+                  <th>Bar</th>
+                </tr>
+              </thead>
+              <tbody id="gene-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Legend -->
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">Legend</span>
+        </div>
+        <div class="panel-body" id="pca-legend"></div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ─── FLDA SECTION ─── -->
+  <div class="section-label">Fisher Linear Discriminant Analysis</div>
+
+  <div id="flda-section">
+
+    <!-- Left: FLDA controls -->
+    <div style="display:flex; flex-direction:column; gap:var(--gutter);">
+
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">FLDA Controls</span>
+        </div>
+        <div class="panel-body">
+
+          <div class="ctrl-group">
+            <div class="ctrl-label">Class A</div>
+            <select id="flda-classA" onchange="debouncedRunFLDA()"></select>
+          </div>
+
+          <div class="ctrl-group">
+            <div class="ctrl-label">Class B</div>
+            <select id="flda-classB" onchange="debouncedRunFLDA()"></select>
+          </div>
+
+          <div class="ctrl-group">
+            <div class="ctrl-label">
+              Train / test split
+              <span class="ctrl-value" id="split-val">80% / 20%</span>
+            </div>
+            <input type="range" id="train-split" min="50" max="95" value="80"
+              oninput="const v=this.value; document.getElementById('split-val').textContent=v+'% / '+(100-v)+'%'; debouncedRunFLDA()">
+          </div>
+
+          <div class="ctrl-group">
+            <div class="ctrl-label">Input space</div>
+            <select id="flda-space">
+              <option value="pca">PCA scores (recommended)</option>
+              <option value="raw">Raw gene space</option>
+            </select>
+          </div>
+
+          <div class="sep"></div>
+
+          <button class="btn primary" style="width:100%" onclick="runFLDA()">↺ Run FLDA</button>
+          <div id="flda-error" class="error-box" style="display:none;"></div>
+        </div>
+      </div>
+
+      <!-- Accuracy -->
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">Classification results</span>
+        </div>
+        <div class="panel-body">
+          <div class="acc-row">
+            <div class="acc-badge">
+              <div class="val" id="train-acc">–</div>
+              <div class="lbl">Train acc.</div>
+            </div>
+            <div class="acc-badge">
+              <div class="val" id="test-acc">–</div>
+              <div class="lbl">Test acc.</div>
+            </div>
+          </div>
+          <div class="info-tip" id="flda-summary">Run FLDA to see classification summary.</div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Right: FLDA plot -->
+    <div class="panel" style="display:flex; flex-direction:column;">
+      <div class="panel-header">
+        <span class="panel-title">FLDA Projection — LD1</span>
+        <span class="panel-badge" id="flda-badge">Select classes</span>
+      </div>
+      <div id="plot-flda" class="plot-wrap" style="flex:1; min-height:480px;"></div>
+    </div>
+
+  </div>
+
+  <div style="height:40px;"></div>
+</div>
+
+<!-- ═══════════════════════ JAVASCRIPT ═══════════════════════ -->
+<script>
+/* ── Color palette ── */
+const CLASS_COLORS = [
+  '#4e9ff5','#3dd68c','#f5a623','#a87cf5',
+  '#f55050','#4ec9b0','#f0d060','#ff7eb6',
+  '#87ceeb','#98fb98','#dda0dd','#f4a460'
+];
+
+const PLOTLY_LAYOUT_BASE = {
+  paper_bgcolor: 'transparent',
+  plot_bgcolor:  '#12151c',
+  font:  { family: "'IBM Plex Mono', monospace", color: '#7a8aaa', size: 11 },
+  margin: { t: 16, r: 16, b: 40, l: 50 },
+  xaxis: {
+    gridcolor: '#2a3040', zerolinecolor: '#3a4458',
+    tickfont: { size: 10 }, title: { font: { size: 11 } }
+  },
+  yaxis: {
+    gridcolor: '#2a3040', zerolinecolor: '#3a4458',
+    tickfont: { size: 10 }, title: { font: { size: 11 } }
+  },
+  showlegend: true,
+  legend: {
+    bgcolor: 'rgba(18,21,28,0.85)',
+    bordercolor: '#2a3040', borderwidth: 1,
+    font: { size: 10 }, x: 0.01, y: 0.99
+  }
+};
+
+const PLOTLY_CONFIG = {
+  displayModeBar: true,
+  modeBarButtonsToRemove: ['lasso2d','select2d','toImage'],
+  displaylogo: false,
+  responsive: true
+};
+
+/* ── State ── */
+let state = {
+  rawData: null,   // { X, labels, geneNames, sampleIds }
+  pcaResult: null,
+  fldaResult: null,
+  classColors: {}
+};
+
+/* ── Pending file state ── */
+let pendingExpr   = null;  // raw Papa rows for expression CSV
+let pendingLabels = null;  // string[] of labels from labels file
+
+const CLASS_DESCRIPTIONS = {
+  LUAD: 'Lung adenocarcinoma',
+  LUSC: 'Lung squamous cell carcinoma',
+  COAD: 'Colon adenocarcinoma',
+  READ: 'Rectum adenocarcinoma',
+  BRCA: 'Breast invasive carcinoma',
+  BCRA: 'Breast invasive carcinoma (often written BRCA)',
+  PRAD: 'Prostate adenocarcinoma',
+  KIRC: 'Kidney renal clear cell carcinoma',
+  KIRP: 'Kidney renal papillary cell carcinoma',
+  LIHC: 'Liver hepatocellular carcinoma',
+  STAD: 'Stomach adenocarcinoma',
+  THCA: 'Thyroid carcinoma',
+  UCEC: 'Uterine corpus endometrial carcinoma',
+  SKCM: 'Skin cutaneous melanoma',
+  GBM:  'Glioblastoma multiforme',
+  OV:   'Ovarian serous cystadenocarcinoma'
+};
+
+function renderClassificationGuide(activeLabels = null) {
+  const guide = document.getElementById('classification-guide');
+  const activeCodes = activeLabels ? [...new Set(activeLabels
+    .map(l => l.toUpperCase())
+    .map(l => l.trim())
+    .filter(Boolean))] : [];
+
+  const codes = activeCodes.length
+    ? activeCodes
+    : ['LUAD', 'COAD', 'BRCA', 'PRAD', 'KIRC', 'LIHC', 'STAD', 'SKCM'];
+
+  guide.innerHTML = '';
+  codes.forEach(code => {
+    const row = document.createElement('div');
+    row.className = 'code-row' + (activeCodes.includes(code) ? ' active' : '');
+
+    const token = document.createElement('span');
+    token.className = 'code-token';
+    token.textContent = code;
+
+    const desc = document.createElement('span');
+    desc.textContent = CLASS_DESCRIPTIONS[code] || 'Uploaded class label';
+
+    row.appendChild(token);
+    row.appendChild(desc);
+    guide.appendChild(row);
+  });
+}
+
+function updateMatrixPreview(rows) {
+  try {
+    const text = rows.map(r => r.join(",")).join("\n");
+    const parsed = Analysis.parseCSV(text, null);
+    document.getElementById('preview-samples').textContent = parsed.X.length;
+    document.getElementById('preview-genes').textContent = parsed.geneNames.length;
+  } catch(err) {
+    document.getElementById('preview-samples').textContent = '–';
+    document.getElementById('preview-genes').textContent = '–';
+  }
+}
+
+renderClassificationGuide();
+
+/* ── File input wiring ── */
+document.getElementById('file-input-expr').addEventListener('change', function(e) {
+  if (e.target.files[0]) readExprFile(e.target.files[0]);
+  this.value = '';
+});
+document.getElementById('file-input-labels').addEventListener('change', function(e) {
+  if (e.target.files[0]) readLabelsFile(e.target.files[0]);
+  this.value = '';
+});
+
+function handleDropExpr(e) {
+  e.preventDefault();
+  document.getElementById('drop-expr').classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file) readExprFile(file);
+}
+function handleDropLabels(e) {
+  e.preventDefault();
+  document.getElementById('drop-labels').classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file) readLabelsFile(file);
+}
+
+function readExprFile(file) {
+  setUploadError('');
+  setStatus('loading', 'Parsing expression…');
+  Papa.parse(file, {
+    complete: res => {
+      pendingExpr = res.data;
+      updateMatrixPreview(pendingExpr);
+      markDropLoaded('drop-expr', 'drop-expr-icon', 'drop-expr-name', 'drop-expr-sub', file.name);
+      setStatus('ready', 'Expression loaded');
+      checkReadyToRun();
+    },
+    error: err => setUploadError('Expression CSV error: ' + err.message),
+    skipEmptyLines: true
+  });
+}
+
+function readLabelsFile(file) {
+  setUploadError('');
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const labels = Analysis.parseLabelsFile(e.target.result);
+      pendingLabels = labels;
+      renderClassificationGuide(labels);
+      markDropLoaded('drop-labels', 'drop-labels-icon', 'drop-labels-name', 'drop-labels-sub',
+        `${file.name}  ·  ${labels.length} labels`);
+      checkReadyToRun();
+    } catch(err) {
+      setUploadError('Labels file error: ' + err.message);
+    }
+  };
+  reader.readAsText(file);
+}
+
+function markDropLoaded(targetId, iconId, nameId, subId, text) {
+  document.getElementById(targetId).classList.add('loaded');
+  document.getElementById(iconId).textContent = '✓';
+  const nameEl = document.getElementById(nameId);
+  nameEl.textContent = text;
+  nameEl.style.display = '';
+  document.getElementById(subId).style.display = 'none';
+}
+
+function checkReadyToRun() {
+  document.getElementById('btn-run').disabled = !pendingExpr;
+}
+
+function triggerRun() {
+  if (!pendingExpr) return;
+  setUploadError('');
+  try {
+    const text = pendingExpr.map(r => r.join(",")).join("\n");
+    const parsed = Analysis.parseCSV(text, null);
+    state.rawData = parsed;
+
+    // Attach uploaded labels if present and counts match
+    if (pendingLabels) {
+      if (pendingLabels.length !== parsed.X.length) {
+        setUploadError(
+          `Label count mismatch: labels file has ${pendingLabels.length} rows but expression file has ${parsed.X.length} samples.`
+        );
+        return;
+      }
+      state.uploadedLabels = pendingLabels;
+    } else {
+      state.uploadedLabels = null;
+    }
+
+    state.clusterLabels = null;
+    finishLoad(parsed);
+  } catch(err) {
+    setUploadError(err.message);
+  }
+}
+
+function finishLoad(parsed) {
+  document.getElementById('stat-samples').textContent = parsed.X.length;
+  document.getElementById('stat-genes').textContent = parsed.geneNames.length;
+  document.getElementById('stat-classes').textContent = '—';
+
+  const maxComp = Math.min(30, parsed.X.length - 1, parsed.geneNames.length);
+  const ncompEl = document.getElementById('ncomp');
+  ncompEl.max = maxComp;
+  if (parseInt(ncompEl.value) > maxComp) ncompEl.value = maxComp;
+  document.getElementById('ncomp-val').textContent = ncompEl.value;
+
+  hideUpload();
+  runPCA();
+}
+
+function setUploadError(msg) {
+  const el = document.getElementById('upload-error');
+  if (msg) { el.textContent = msg; el.style.display = ''; }
+  else      { el.style.display = 'none'; }
+}
+
+function loadDemo() {
+  setStatus('loading', 'Generating…');
+  setTimeout(() => {
+    try {
+      const d = Analysis.generateDemoData(80, 200);
+      state.rawData    = { X: d.X, labels: null, geneNames: d.geneNames, sampleIds: d.sampleIds };
+      state.uploadedLabels = null;  // demo has no labels — let K-Means discover
+      state.clusterLabels  = null;
+
+      document.getElementById('stat-samples').textContent = d.X.length;
+      document.getElementById('stat-genes').textContent   = d.geneNames.length;
+      document.getElementById('stat-classes').textContent = '—';
+
+      const maxComp = Math.min(30, d.X.length - 1, d.geneNames.length);
+      const ncompEl = document.getElementById('ncomp');
+      ncompEl.max = maxComp;
+      if (parseInt(ncompEl.value) > maxComp) ncompEl.value = maxComp;
+      document.getElementById('ncomp-val').textContent = ncompEl.value;
+
+      hideUpload();
+      runPCA();
+    } catch(err) {
+      setUploadError(err.message);
+    }
+  }, 50);
+}
+
+function hideUpload() {
+  document.getElementById('upload-zone').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+}
+
+function assignColors(labels) {
+  const classes = [...new Set(labels)];
+  state.classColors = {};
+  classes.forEach((c, i) => state.classColors[c] = CLASS_COLORS[i % CLASS_COLORS.length]);
+}
+
+function populateFLDASelectors(classes) {
+  const a = document.getElementById('flda-classA');
+  const b = document.getElementById('flda-classB');
+  a.innerHTML = b.innerHTML = '';
+  classes.forEach(c => {
+    a.add(new Option(c, c));
+    b.add(new Option(c, c));
+  });
+  if (classes.length > 1) b.value = classes[1];
+}
+
+/* ── PCA ── */
+function runPCA() {
+  if (!state.rawData) return;
+  const errBox = document.getElementById('pca-error');
+  errBox.style.display = 'none';
+  setStatus('loading', 'Computing PCA…');
+
+  setTimeout(() => {
+    try {
+      const nComp = parseInt(document.getElementById('ncomp').value);
+      state.pcaResult = Analysis.runPCA(state.rawData.X, nComp);
+
+      // Update PC select options
+      const pcSel = document.getElementById('pc-select');
+      const curVal = parseInt(pcSel.value) || 0;
+      pcSel.innerHTML = '';
+      for (let i = 0; i < nComp; i++)
+        pcSel.add(new Option(`PC${i+1}`, i));
+      pcSel.value = Math.min(curVal, nComp - 1);
+
+      // Cumulative var stat
+      const cv3 = Math.min(
+        state.pcaResult.cumulativeVar[Math.min(2, state.pcaResult.cumulativeVar.length-1)], 1
+      );
+      document.getElementById('stat-var3').textContent = (cv3 * 100).toFixed(1) + '%';
+
+      renderScree();
+      renderElbow();
+      runKMeans(); // clustering always follows PCA
+    } catch(err) {
+      errBox.textContent = err.message;
+      errBox.style.display = '';
+      setStatus('error', 'Error');
+    }
+  }, 10);
+}
+
+let pcaTimer = null;
+function debouncedRunPCA() {
+  clearTimeout(pcaTimer);
+  pcaTimer = setTimeout(runPCA, 400);
+}
+
+/* ── Active label resolution ──
+   Priority: uploadedLabels > clusterLabels (K-Means)
+   Returns string[] same length as rawData.X, or null if neither available yet.
+─────────────────────────────────────────── */
+function getActiveLabels() {
+  if (state.uploadedLabels) return state.uploadedLabels;
+  if (state.clusterLabels)  return state.clusterLabels;
+  return null;
+}
+
+/* ── K-Means ── */
+function runKMeans() {
+  if (!state.pcaResult) return;
+  renderElbow();
+
+  // If user uploaded labels, skip K-Means — use those directly
+  if (state.uploadedLabels) {
+    const classes = [...new Set(state.uploadedLabels)].sort();
+    assignColors(state.uploadedLabels);
+    document.getElementById('stat-classes').textContent = classes.length;
+    populateFLDASelectors(classes);
+    renderPlots();
+    renderGeneTable();
+    renderLegend();
+    setStatus('ready', 'Ready');
+    return;
+  }
+
+  setStatus('loading', 'Clustering…');
+  setTimeout(() => {
+    try {
+      const k = parseInt(document.getElementById('kmeans-k').value);
+      const scores = state.pcaResult.scores;
+      const result = Analysis.runKMeans(scores, k);
+
+      state.clusterLabels = result.labels;
+      assignColors(result.labels);
+
+      const classes = [...new Set(result.labels)].sort();
+      document.getElementById('stat-classes').textContent = classes.length;
+      populateFLDASelectors(classes);
+
+      renderPlots();
+      renderGeneTable();
+      renderLegend();
+      setStatus('ready', 'Ready');
+    } catch(err) {
+      document.getElementById('pca-error').textContent = err.message;
+      document.getElementById('pca-error').style.display = '';
+      setStatus('error', 'Error');
+    }
+  }, 10);
+}
+
+let kmeansTimer = null;
+function debouncedRunKMeans() {
+  clearTimeout(kmeansTimer);
+  kmeansTimer = setTimeout(runKMeans, 300);
+}
+
+function renderPlots() {
+  if (!state.pcaResult || !state.rawData) return;
+  render3D();
+  render2D();
+  renderScree();
+}
+
+/* ── 3D Scatter ── */
+function render3D() {
+  const { scores } = state.pcaResult;
+  const { sampleIds } = state.rawData;
+  const labels = getActiveLabels();
+  const showLabels = document.getElementById('show-labels').checked;
+  const classes = labels ? [...new Set(labels)] : ['All samples'];
+
+  const traces = classes.map(cls => {
+    const idx = labels
+      ? labels.map((l,i)=>[l,i]).filter(([l])=>l===cls).map(([,i])=>i)
+      : scores.map((_,i)=>i);
+    return {
+      type: 'scatter3d',
+      mode: showLabels ? 'markers+text' : 'markers',
+      name: cls,
+      x: idx.map(i=>scores[i][0]),
+      y: idx.map(i=>scores[i][1]),
+      z: idx.map(i=>(scores[i][2]??0)),
+      text: showLabels ? idx.map(i=>sampleIds[i]) : undefined,
+      textposition: 'top center',
+      textfont: { size: 8, color: state.classColors[cls] || CLASS_COLORS[0] },
+      marker: {
+        color: state.classColors[cls] || CLASS_COLORS[0],
+        size: 5, opacity: 0.85,
+        line: { color: 'rgba(0,0,0,0.3)', width: 0.5 }
+      },
+      hovertemplate: `<b>${cls}</b><br>PC1: %{x:.3f}<br>PC2: %{y:.3f}<br>PC3: %{z:.3f}<extra></extra>`
+    };
+  });
+
+  const layout = {
+    ...PLOTLY_LAYOUT_BASE,
+    margin: { t: 10, r: 10, b: 10, l: 10 },
+    scene: {
+      bgcolor: '#12151c',
+      xaxis: { title: 'PC1', gridcolor:'#2a3040', zerolinecolor:'#3a4458', color:'#7a8aaa', tickfont:{size:9} },
+      yaxis: { title: 'PC2', gridcolor:'#2a3040', zerolinecolor:'#3a4458', color:'#7a8aaa', tickfont:{size:9} },
+      zaxis: { title: 'PC3', gridcolor:'#2a3040', zerolinecolor:'#3a4458', color:'#7a8aaa', tickfont:{size:9} }
+    },
+    showlegend: true,
+    legend: { bgcolor:'rgba(18,21,28,0.85)', bordercolor:'#2a3040', borderwidth:1, font:{size:10} }
+  };
+
+  Plotly.react('plot-3d', traces, layout, PLOTLY_CONFIG);
+}
+
+/* ── 2D Scatter + ellipses ── */
+function render2D() {
+  const { scores, explainedVarRatio } = state.pcaResult;
+  const { sampleIds } = state.rawData;
+  const labels = getActiveLabels();
+  const showLabels = document.getElementById('show-labels').checked;
+  const showEllipses = document.getElementById('show-ellipses').checked;
+  const classes = labels ? [...new Set(labels)] : ['All samples'];
+
+  const traces = [];
+
+  // Confidence ellipses
+  if (showEllipses && labels) {
+    classes.forEach(cls => {
+      const idx = labels.map((l,i)=>[l,i]).filter(([l])=>l===cls).map(([,i])=>i);
+      const xs = idx.map(i=>scores[i][0]);
+      const ys = idx.map(i=>scores[i][1]);
+      if (xs.length < 3) return;
+      const ell = computeEllipse(xs, ys, 2);
+      if (!ell) return;
+      traces.push({
+        type: 'scatter', mode: 'lines',
+        x: ell.x, y: ell.y,
+        line: { color: state.classColors[cls] || CLASS_COLORS[0], width: 1, dash: 'dot' },
+        fill: 'toself', fillcolor: hexAlpha(state.classColors[cls] || CLASS_COLORS[0], 0.07),
+        showlegend: false, hoverinfo: 'skip', name: cls
+      });
+    });
+  }
+
+  // Points
+  classes.forEach((cls, ci) => {
+    const idx = labels
+      ? labels.map((l,i)=>[l,i]).filter(([l])=>l===cls).map(([,i])=>i)
+      : scores.map((_,i)=>i);
+    const color = state.classColors[cls] || CLASS_COLORS[ci % CLASS_COLORS.length];
+    traces.push({
+      type: 'scatter',
+      mode: showLabels ? 'markers+text' : 'markers',
+      name: cls,
+      x: idx.map(i=>scores[i][0]),
+      y: idx.map(i=>scores[i][1]),
+      text: showLabels ? idx.map(i=>sampleIds[i]) : undefined,
+      textposition: 'top center',
+      textfont: { size: 8, color },
+      marker: { color, size: 6, opacity: 0.85, line:{color:'rgba(0,0,0,0.3)',width:0.5} },
+      hovertemplate: `<b>${cls}</b><br>PC1: %{x:.3f}<br>PC2: %{y:.3f}<extra></extra>`
+    });
+  });
+
+  const pct1 = (explainedVarRatio[0]*100).toFixed(1);
+  const pct2 = (explainedVarRatio[1]*100).toFixed(1);
+
+  const layout = {
+    ...PLOTLY_LAYOUT_BASE,
+    xaxis: { ...PLOTLY_LAYOUT_BASE.xaxis, title: `PC1 (${pct1}%)` },
+    yaxis: { ...PLOTLY_LAYOUT_BASE.yaxis, title: `PC2 (${pct2}%)` },
+  };
+
+  Plotly.react('plot-2d', traces, layout, PLOTLY_CONFIG);
+  document.getElementById('badge-2d').textContent = `PC1 ${pct1}% · PC2 ${pct2}%`;
+}
+
+/* ── Scree plot ── */
+function renderScree() {
+  const { explainedVarRatio, cumulativeVar } = state.pcaResult;
+  const n = explainedVarRatio.length;
+  const pcs = Array.from({length:n},(_,i)=>`PC${i+1}`);
+  const varPct = Array.from(explainedVarRatio).map(v=>v*100);
+  const cumPct = Array.from(cumulativeVar).map(v=>v*100);
+
+  const thresh = parseInt(document.getElementById('var-thresh').value);
+
+  // Find knee point for threshold
+  const threshIdx = cumPct.findIndex(v => v >= thresh);
+  const shapes = threshIdx >= 0 ? [{
+    type: 'line',
+    x0: threshIdx, x1: threshIdx, y0: 0, y1: 100,
+    line: { color: '#f5a623', width: 1.5, dash: 'dash' }
+  }] : [];
+
+  const traces = [
+    {
+      type: 'bar', name: 'Explained var.',
+      x: pcs, y: varPct,
+      marker: { color: '#4e9ff5', opacity: 0.8 },
+      hovertemplate: 'PC%{x}: %{y:.2f}%<extra></extra>'
+    },
+    {
+      type: 'scatter', mode: 'lines+markers', name: 'Cumulative',
+      x: pcs, y: cumPct,
+      line: { color: '#3dd68c', width: 2 },
+      marker: { color: '#3dd68c', size: 5 },
+      yaxis: 'y',
+      hovertemplate: 'Cum: %{y:.1f}%<extra></extra>'
+    }
+  ];
+
+  const layout = {
+    ...PLOTLY_LAYOUT_BASE,
+    barmode: 'group',
+    shapes,
+    annotations: threshIdx >= 0 ? [{
+      x: threshIdx, y: thresh,
+      text: `${thresh}% @ PC${threshIdx+1}`,
+      showarrow: true, arrowhead: 2, arrowcolor: '#f5a623',
+      font: { color: '#f5a623', size: 10 },
+      bgcolor: 'rgba(18,21,28,0.8)'
+    }] : [],
+    xaxis: { ...PLOTLY_LAYOUT_BASE.xaxis, title: 'Principal Component' },
+    yaxis: { ...PLOTLY_LAYOUT_BASE.yaxis, title: 'Variance (%)', range: [0, 105] }
+  };
+
+  Plotly.react('plot-scree', traces, layout, PLOTLY_CONFIG);
+}
+
+/* ── Elbow plot ── */
+function renderElbow() {
+  if (!state.pcaResult) return;
+
+  const scores = state.pcaResult.scores;
+  const maxK = parseInt(document.getElementById('kmeans-k').max) || 10;
+  const curve = Analysis.elbowCurve(scores, maxK);
+
+  const ks = curve.map(d => d.k);
+  const inertias = curve.map(d => d.inertia);
+
+  const selectedK = parseInt(document.getElementById('kmeans-k').value);
+  const selectedPoint = curve.find(d => d.k === selectedK);
+
+  const traces = [
+    {
+      type: 'scatter',
+      mode: 'lines+markers',
+      name: 'Inertia',
+      x: ks,
+      y: inertias,
+      line: { color: '#4e9ff5', width: 2 },
+      marker: { color: '#4e9ff5', size: 6 },
+      hovertemplate: 'K=%{x}<br>Inertia: %{y:.3f}<extra></extra>'
+    }
+  ];
+
+  if (selectedPoint) {
+    traces.push({
+      type: 'scatter',
+      mode: 'markers',
+      name: 'Selected K',
+      x: [selectedPoint.k],
+      y: [selectedPoint.inertia],
+      marker: {
+        color: '#f5a623',
+        size: 11,
+        line: { color: '#12151c', width: 2 }
+      },
+      hovertemplate: 'Selected K=%{x}<br>Inertia: %{y:.3f}<extra></extra>'
+    });
+  }
+
+  const layout = {
+    ...PLOTLY_LAYOUT_BASE,
+    xaxis: {
+      ...PLOTLY_LAYOUT_BASE.xaxis,
+      title: 'Number of clusters (K)',
+      dtick: 1,
+      range: [Math.min(...ks) - 0.5, Math.max(...ks) + 0.5]
+    },
+    yaxis: { ...PLOTLY_LAYOUT_BASE.yaxis, title: 'Within-cluster inertia' },
+    showlegend: false
+  };
+
+  Plotly.react('plot-elbow', traces, layout, PLOTLY_CONFIG);
+  document.getElementById('badge-elbow').textContent = `K=${selectedK}`;
+}
+
+function updateScreeLine() {
+  if (state.pcaResult) renderScree();
+}
+
+/* ── Gene table ── */
+function renderGeneTable() {
+  if (!state.pcaResult) return;
+  const pcIdx = parseInt(document.getElementById('pc-select').value);
+  const nTop = parseInt(document.getElementById('topgenes').value);
+  const { topGeneIndices, components } = state.pcaResult;
+  const { geneNames } = state.rawData;
+
+  document.getElementById('gene-pc-label').textContent = `PC${pcIdx+1}`;
+
+  const top = topGeneIndices[pcIdx].slice(0, nTop);
+  const maxAbs = Math.abs(components[pcIdx][top[0]]);
+
+  const tbody = document.getElementById('gene-tbody');
+  tbody.innerHTML = '';
+  top.forEach((gIdx, rank) => {
+    const loading = components[pcIdx][gIdx];
+    const absL = Math.abs(loading);
+    const barW = Math.round((absL / maxAbs) * 60);
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td style="color:var(--text3)">${rank+1}</td>
+      <td style="color:var(--accent)">${geneNames[gIdx] || `G${gIdx}`}</td>
+      <td>${absL.toFixed(4)}</td>
+      <td><span class="gene-bar" style="width:${barW}px; background:${loading>0?'var(--green)':'var(--red)'}"></span></td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+/* ── Legend ── */
+function renderLegend() {
+  const labels = getActiveLabels();
+  const legend = document.getElementById('pca-legend');
+  legend.innerHTML = '';
+  if (!labels) {
+    legend.innerHTML = '<div style="font-family:var(--mono);font-size:10px;color:var(--text3);">Labels pending…</div>';
+    return;
+  }
+  const classes = [...new Set(labels)];
+  const sourceTag = state.uploadedLabels
+    ? '<span style="color:var(--green);font-size:9px;font-family:var(--mono);">uploaded</span>'
+    : '<span style="color:var(--accent);font-size:9px;font-family:var(--mono);">k-means</span>';
+  const hdr = document.createElement('div');
+  hdr.style.cssText = 'margin-bottom:8px;';
+  hdr.innerHTML = `Label source: ${sourceTag}`;
+  legend.appendChild(hdr);
+  classes.forEach(cls => {
+    const item = document.createElement('div');
+    item.className = 'legend-item';
+    const count = labels.filter(l=>l===cls).length;
+    item.innerHTML = `
+      <span class="legend-dot" style="background:${state.classColors[cls] || '#888'}"></span>
+      <span>${cls}</span>
+      <span style="color:var(--text3);margin-left:auto;font-family:var(--mono);font-size:10px">${count}</span>
+    `;
+    legend.appendChild(item);
+  });
+}
+
+/* ── FLDA ── */
+function runFLDA() {
+  if (!state.rawData) return;
+  const errBox = document.getElementById('flda-error');
+  errBox.style.display = 'none';
+  setStatus('loading', 'Computing FLDA…');
+
+  setTimeout(() => {
+    try {
+      const classA = document.getElementById('flda-classA').value;
+      const classB = document.getElementById('flda-classB').value;
+      if (classA === classB) throw new Error("Select two different classes.");
+
+      const trainRatio = parseInt(document.getElementById('train-split').value) / 100;
+      const useRaw = document.getElementById('flda-space').value === 'raw';
+      const pcaRes = useRaw ? null : state.pcaResult;
+
+      const result = Analysis.runFLDA(
+        state.rawData.X,
+        getActiveLabels(),
+        classA, classB,
+        1, trainRatio, pcaRes
+      );
+      state.fldaResult = result;
+
+      // Update accuracy
+      document.getElementById('train-acc').textContent = (result.trainAcc*100).toFixed(1)+'%';
+      document.getElementById('test-acc').textContent =
+        isNaN(result.testAcc) ? 'N/A' : (result.testAcc*100).toFixed(1)+'%';
+
+      // Summary
+      const testStr = isNaN(result.testAcc) ? 'no test samples' : `${(result.testAcc*100).toFixed(1)}% test accuracy`;
+      document.getElementById('flda-summary').textContent =
+        `Separating ${classA} vs ${classB}. LD1 threshold at ${result.threshold.toFixed(3)}. `
+        + `${(result.trainAcc*100).toFixed(1)}% train accuracy, ${testStr}.`;
+
+      document.getElementById('flda-badge').textContent = `${classA} vs ${classB}`;
+
+      renderFLDA();
+      setStatus('ready', 'Ready');
+    } catch(err) {
+      errBox.textContent = err.message;
+      errBox.style.display = '';
+      setStatus('error', 'Error');
+    }
+  }, 10);
+}
+
+let fldaTimer = null;
+function debouncedRunFLDA() {
+  clearTimeout(fldaTimer);
+  fldaTimer = setTimeout(runFLDA, 500);
+}
+
+function renderFLDA() {
+  if (!state.fldaResult) return;
+  const { projection, sampleLabels, threshold, projMuA, projMuB, classA, classB } = state.fldaResult;
+  const { sampleIds } = state.rawData;
+  const sampleIdxArr = state.fldaResult.sampleIdx;
+
+  const projA = [], projB = [], idsA = [], idsB = [];
+  sampleLabels.forEach((l, i) => {
+    const v = projection[i][0];
+    if (l === classA) { projA.push(v); idsA.push(sampleIds[sampleIdxArr[i]]); }
+    else { projB.push(v); idsB.push(sampleIds[sampleIdxArr[i]]); }
+  });
+
+  // KDE for violin-like density
+  function kde(vals, nPts = 200) {
+    if (!vals.length) return { x:[], y:[] };
+    const min = Math.min(...vals), max = Math.max(...vals);
+    const range = max - min || 1;
+    const h = 1.06 * stddev(vals) * Math.pow(vals.length, -0.2) || range * 0.1;
+    const xs = Array.from({length:nPts},(_,i) => min - range*0.2 + (range*1.4)/(nPts-1)*i);
+    const ys = xs.map(x => vals.reduce((s,v) => s + Math.exp(-0.5*((x-v)/h)**2)/(h*Math.sqrt(2*Math.PI)), 0) / vals.length);
+    return { x: xs, y: ys };
+  }
+
+  const dA = kde(projA), dB = kde(projB);
+
+  const traces = [
+    // KDE curves
+    {
+      type:'scatter', mode:'lines', name:`${classA} dist.`,
+      x: dA.x, y: dA.y,
+      line: { color: state.classColors[classA], width: 2 },
+      fill: 'tozeroy', fillcolor: hexAlpha(state.classColors[classA], 0.18),
+      hoverinfo: 'skip'
+    },
+    {
+      type:'scatter', mode:'lines', name:`${classB} dist.`,
+      x: dB.x, y: dB.y,
+      line: { color: state.classColors[classB], width: 2 },
+      fill: 'tozeroy', fillcolor: hexAlpha(state.classColors[classB], 0.18),
+      hoverinfo: 'skip'
+    },
+    // Rug plots
+    {
+      type:'scatter', mode:'markers', name: classA,
+      x: projA, y: projA.map(()=> -0.005),
+      marker: { color: state.classColors[classA], size: 6, symbol:'line-ns', opacity:0.7, line:{color:state.classColors[classA],width:2} },
+      text: idsA,
+      hovertemplate: `%{text}<br>LD1: %{x:.3f}<extra>${classA}</extra>`
+    },
+    {
+      type:'scatter', mode:'markers', name: classB,
+      x: projB, y: projB.map(()=> -0.01),
+      marker: { color: state.classColors[classB], size: 6, symbol:'line-ns', opacity:0.7, line:{color:state.classColors[classB],width:2} },
+      text: idsB,
+      hovertemplate: `%{text}<br>LD1: %{x:.3f}<extra>${classB}</extra>`
+    }
+  ];
+
+  const layout = {
+    ...PLOTLY_LAYOUT_BASE,
+    xaxis: { ...PLOTLY_LAYOUT_BASE.xaxis, title: 'LD1 Projection', zeroline: false },
+    yaxis: { ...PLOTLY_LAYOUT_BASE.yaxis, title: 'Density', zeroline: false },
+    shapes: [
+      // Threshold line
+      {
+        type:'line', xref:'x', yref:'paper',
+        x0: threshold, x1: threshold, y0: 0, y1: 1,
+        line: { color: '#f5a623', width: 1.5, dash: 'dot' }
+      },
+      // Class mean A
+      {
+        type:'line', xref:'x', yref:'paper',
+        x0: projMuA, x1: projMuA, y0: 0, y1: 0.3,
+        line: { color: state.classColors[classA], width: 1, dash: 'dash' }
+      },
+      // Class mean B
+      {
+        type:'line', xref:'x', yref:'paper',
+        x0: projMuB, x1: projMuB, y0: 0, y1: 0.3,
+        line: { color: state.classColors[classB], width: 1, dash: 'dash' }
+      }
+    ],
+    annotations: [
+      { xref:'x', yref:'paper', x: threshold, y:1.02,
+        text:'Threshold', showarrow:false, font:{color:'#f5a623',size:10} }
+    ]
+  };
+
+  Plotly.react('plot-flda', traces, layout, PLOTLY_CONFIG);
+}
+
+/* ── Helpers ── */
+function computeEllipse(xs, ys, nSigma = 2, nPts = 80) {
+  if (xs.length < 3) return null;
+  const mx = xs.reduce((a,v)=>a+v,0)/xs.length;
+  const my = ys.reduce((a,v)=>a+v,0)/ys.length;
+  const dx = xs.map(v=>v-mx), dy = ys.map(v=>v-my);
+  const n = xs.length;
+  const sxx = dx.reduce((a,v)=>a+v*v,0)/(n-1);
+  const syy = dy.reduce((a,v)=>a+v*v,0)/(n-1);
+  const sxy = dx.reduce((a,v,i)=>a+v*dy[i],0)/(n-1);
+
+  const tr = sxx + syy;
+  const det = sxx*syy - sxy*sxy;
+  const disc = Math.sqrt(Math.max(0, (tr/2)**2 - det));
+  const l1 = tr/2 + disc, l2 = tr/2 - disc;
+  const angle = Math.atan2(l1 - sxx, sxy);
+
+  const cosA = Math.cos(angle), sinA = Math.sin(angle);
+  const rx = nSigma * Math.sqrt(Math.max(0, l1));
+  const ry = nSigma * Math.sqrt(Math.max(0, l2));
+
+  const ellX = [], ellY = [];
+  for (let i = 0; i <= nPts; i++) {
+    const t = (2*Math.PI*i)/nPts;
+    const ex = rx * Math.cos(t), ey = ry * Math.sin(t);
+    ellX.push(mx + cosA*ex - sinA*ey);
+    ellY.push(my + sinA*ex + cosA*ey);
+  }
+  return { x: ellX, y: ellY };
+}
+
+function stddev(arr) {
+  if (arr.length < 2) return 1;
+  const mu = arr.reduce((a,v)=>a+v,0)/arr.length;
+  return Math.sqrt(arr.reduce((a,v)=>a+(v-mu)**2,0)/(arr.length-1));
+}
+
+function hexAlpha(hex, alpha) {
+  const r = parseInt(hex.slice(1,3),16);
+  const g = parseInt(hex.slice(3,5),16);
+  const b = parseInt(hex.slice(5,7),16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+function setStatus(type, text) {
+  const el = document.getElementById('status-pill');
+  el.className = `status-pill ${type}`;
+  el.textContent = text;
+}
+</script>
+
+</body>
+</html>
