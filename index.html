@@ -178,6 +178,49 @@ body {
   color: var(--text3);
 }
 
+.demo-progress {
+  display: none;
+  max-width: 560px;
+  margin: 12px auto 0;
+  text-align: left;
+}
+
+.demo-progress-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text3);
+  margin-bottom: 6px;
+}
+
+.demo-progress-track {
+  height: 8px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.demo-progress-fill {
+  width: 0%;
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--green));
+  border-radius: inherit;
+  transition: width 0.2s ease;
+}
+
+.demo-progress.indeterminate .demo-progress-fill {
+  width: 40%;
+  animation: progressSlide 1s ease-in-out infinite;
+}
+
+@keyframes progressSlide {
+  0%   { transform: translateX(-110%); }
+  100% { transform: translateX(260%); }
+}
+
 .upload-info-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -649,10 +692,68 @@ select option { background: var(--bg2); }
 
 /* ── Responsive ── */
 @media (max-width: 900px) {
+  #header {
+    height: auto;
+    min-height: 52px;
+    padding: 10px 14px;
+    align-items: flex-start;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .logo {
+    min-height: 28px;
+  }
+
+  .header-right {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .header-right .status-pill {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+
+  .header-right .btn {
+    width: 100%;
+    min-height: 34px;
+    justify-content: center;
+    padding: 7px 8px;
+    font-size: 10px;
+    white-space: normal;
+    line-height: 1.2;
+    text-align: center;
+  }
+
+  #upload-zone {
+    margin-top: 20px;
+  }
+
   #pca-section { grid-template-columns: 1fr; }
   #flda-section { grid-template-columns: 1fr; }
   .stats-strip { grid-template-columns: repeat(2,1fr); }
   .upload-info-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 460px) {
+  #header {
+    padding: 9px 10px;
+  }
+
+  .logo {
+    font-size: 13px;
+  }
+
+  .header-right {
+    grid-template-columns: 1fr;
+  }
+
+  .header-right .btn {
+    min-height: 32px;
+  }
 }
 </style>
 </head>
@@ -714,6 +815,15 @@ select option { background: var(--bg2); }
   <div class="btn-row" style="margin-top:14px;">
     <button class="btn primary" id="btn-run" onclick="triggerRun()" disabled>Run Analysis</button>
     <button class="btn" onclick="loadDemo()">Load demo data</button>
+  </div>
+  <div class="demo-progress" id="demo-progress" aria-live="polite">
+    <div class="demo-progress-meta">
+      <span id="demo-progress-label">Preparing demo data…</span>
+      <span id="demo-progress-percent">0%</span>
+    </div>
+    <div class="demo-progress-track">
+      <div class="demo-progress-fill" id="demo-progress-fill"></div>
+    </div>
   </div>
   <div id="upload-error" class="error-box" style="display:none;margin-top:10px;max-width:560px;margin-left:auto;margin-right:auto;"></div>
 
@@ -1241,12 +1351,39 @@ function setUploadError(msg) {
   else      { el.style.display = 'none'; }
 }
 
+function setDemoProgress(progress) {
+  const wrap = document.getElementById('demo-progress');
+  const fill = document.getElementById('demo-progress-fill');
+  const label = document.getElementById('demo-progress-label');
+  const percentEl = document.getElementById('demo-progress-percent');
+  const pct = Math.max(0, Math.min(100, Math.round(progress.percent || 0)));
+
+  wrap.style.display = 'block';
+  wrap.classList.toggle('indeterminate', !!progress.indeterminate);
+  label.textContent = progress.phase || 'Loading demo data…';
+  percentEl.textContent = progress.indeterminate ? 'Working…' : `${pct}%`;
+  if (!progress.indeterminate) fill.style.width = `${pct}%`;
+}
+
+function resetDemoProgress() {
+  const wrap = document.getElementById('demo-progress');
+  const fill = document.getElementById('demo-progress-fill');
+  wrap.classList.remove('indeterminate');
+  wrap.style.display = 'none';
+  fill.style.width = '0%';
+  document.getElementById('demo-progress-label').textContent = 'Preparing demo data…';
+  document.getElementById('demo-progress-percent').textContent = '0%';
+}
+
 async function loadDemo() {
   setStatus('loading', 'Loading demo CSVs…');
   setUploadError('');
+  setDemoProgress({ phase: 'Preparing demo data…', percent: 0 });
 
   try {
-    const demo = await Analysis.loadDemoData('data/expression.csv', 'data/labels.csv');
+    const demo = await Analysis.loadDemoData('data/expression.csv', 'data/labels.csv', {
+      onProgress: setDemoProgress
+    });
     const d = demo.data;
 
     state.rawData = d;
@@ -1271,6 +1408,7 @@ async function loadDemo() {
   } catch(err) {
     setUploadError(err.message + ' Put your demo files at data/expression.csv and data/labels.csv, then open the app from GitHub Pages or a local server.');
     setStatus('error', 'Error');
+    resetDemoProgress();
   }
 }
 

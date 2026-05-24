@@ -781,30 +781,57 @@
    *
    * @param {string} expressionUrl - URL/path for expression matrix CSV
    * @param {string|null} labelsUrl - URL/path for labels file; pass null to skip
+   * @param {{ onProgress?: function }} options - optional progress callback
    * @returns {Promise<{ data: object, labels: string[]|null, expressionText: string, labelsText: string|null }>}
    */
-  async function loadDemoData(expressionUrl = "data/expression.csv", labelsUrl = "data/labels.csv") {
+  async function loadDemoData(expressionUrl = "data/expression.csv", labelsUrl = "data/labels.csv", options = {}) {
     if (typeof fetch !== "function") {
       throw new Error("Demo CSV loading requires a browser or environment with fetch().");
     }
 
-    const exprResponse = await fetch(expressionUrl);
-    if (!exprResponse.ok) {
-      throw new Error(`Could not load demo expression file: ${expressionUrl}`);
+    const onProgress = typeof options.onProgress === "function" ? options.onProgress : () => {};
+
+    async function fetchTextWithProgress(url, phase, startPct, endPct) {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`Could not load demo file: ${url}`);
+
+      const total = Number(response.headers.get("content-length")) || 0;
+      if (!response.body || typeof response.body.getReader !== "function") {
+        onProgress({ phase, loaded: 0, total, percent: startPct, indeterminate: true });
+        return response.text();
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let loaded = 0;
+      let text = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        loaded += value.byteLength;
+        text += decoder.decode(value, { stream: true });
+
+        const fraction = total ? Math.min(loaded / total, 1) : 0;
+        const percent = total ? startPct + fraction * (endPct - startPct) : startPct;
+        onProgress({ phase, loaded, total, percent, indeterminate: !total });
+      }
+
+      text += decoder.decode();
+      onProgress({ phase, loaded, total, percent: endPct, indeterminate: false });
+      return text;
     }
 
-    const expressionText = await exprResponse.text();
+    onProgress({ phase: "Downloading expression CSV", percent: 2, indeterminate: false });
+    const expressionText = await fetchTextWithProgress(expressionUrl, "Downloading expression CSV", 2, 82);
+    onProgress({ phase: "Parsing expression matrix", percent: 86, indeterminate: true });
     const data = parseCSV(expressionText, null);
 
     let labels = null;
     let labelsText = null;
     if (labelsUrl) {
-      const labelsResponse = await fetch(labelsUrl);
-      if (!labelsResponse.ok) {
-        throw new Error(`Could not load demo labels file: ${labelsUrl}`);
-      }
-
-      labelsText = await labelsResponse.text();
+      labelsText = await fetchTextWithProgress(labelsUrl, "Downloading labels CSV", 90, 96);
+      onProgress({ phase: "Parsing labels", percent: 98, indeterminate: true });
       labels = parseLabelsFile(labelsText);
 
       if (labels.length !== data.X.length) {
@@ -814,6 +841,7 @@
       }
     }
 
+    onProgress({ phase: "Demo data ready", percent: 100, indeterminate: false });
     return { data, labels, expressionText, labelsText };
   }
 
