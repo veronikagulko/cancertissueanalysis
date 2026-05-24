@@ -1241,31 +1241,37 @@ function setUploadError(msg) {
   else      { el.style.display = 'none'; }
 }
 
-function loadDemo() {
-  setStatus('loading', 'Generating…');
-  setTimeout(() => {
-    try {
-      const d = Analysis.generateDemoData(80, 200);
-      state.rawData    = { X: d.X, labels: null, geneNames: d.geneNames, sampleIds: d.sampleIds };
-      state.uploadedLabels = null;  // demo has no labels — let K-Means discover
-      state.clusterLabels  = null;
+async function loadDemo() {
+  setStatus('loading', 'Loading demo CSVs…');
+  setUploadError('');
 
-      document.getElementById('stat-samples').textContent = d.X.length;
-      document.getElementById('stat-genes').textContent   = d.geneNames.length;
-      document.getElementById('stat-classes').textContent = '—';
+  try {
+    const demo = await Analysis.loadDemoData('data/expression.csv', 'data/labels.csv');
+    const d = demo.data;
 
-      const maxComp = Math.min(30, d.X.length - 1, d.geneNames.length);
-      const ncompEl = document.getElementById('ncomp');
-      ncompEl.max = maxComp;
-      if (parseInt(ncompEl.value) > maxComp) ncompEl.value = maxComp;
-      document.getElementById('ncomp-val').textContent = ncompEl.value;
+    state.rawData = d;
+    state.uploadedLabels = demo.labels;
+    state.clusterLabels = null;
 
-      hideUpload();
-      runPCA();
-    } catch(err) {
-      setUploadError(err.message);
-    }
-  }, 50);
+    document.getElementById('stat-samples').textContent = d.X.length;
+    document.getElementById('stat-genes').textContent = d.geneNames.length;
+    document.getElementById('stat-classes').textContent = '—';
+
+    updateMatrixPreview(Papa.parse(demo.expressionText, { skipEmptyLines: true }).data);
+    if (demo.labels) renderClassificationGuide(demo.labels);
+
+    const maxComp = Math.min(30, d.X.length - 1, d.geneNames.length);
+    const ncompEl = document.getElementById('ncomp');
+    ncompEl.max = maxComp;
+    if (parseInt(ncompEl.value) > maxComp) ncompEl.value = maxComp;
+    document.getElementById('ncomp-val').textContent = ncompEl.value;
+
+    hideUpload();
+    runPCA();
+  } catch(err) {
+    setUploadError(err.message + ' Put your demo files at data/expression.csv and data/labels.csv, then open the app from GitHub Pages or a local server.');
+    setStatus('error', 'Error');
+  }
 }
 
 function hideUpload() {
